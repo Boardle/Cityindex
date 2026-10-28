@@ -568,6 +568,39 @@ const TOPO = {"type":"Topology","objects":{"countries":{"type":"GeometryCollecti
         bctx.drawImage(t.img, (vx - x0) * sx_, (vy - y0) * sy_, vw * sx_ + 0.7, vh * sy_ + 0.7);
       }
     }
+    drawGibs(x0, y0, w, hh, sx_, sy_);
+  }
+
+  // ---- online hi-res imagery: NASA GIBS WMTS (EPSG:4326, 512px tiles, level z tile = 288/2^z degrees, origin -180,90). Public domain, no key.
+  // Blocked inside the claude.ai artifact sandbox (falls back to the local 8K tiles); works on a normal web host such as GitHub Pages.
+  var GIBS = { sat: 'BlueMarble_NextGeneration', terrain: 'BlueMarble_ShadedRelief_Bathymetry' }, GMAXZ = 7, gcache = {};
+  function gibsGet(layer, z, r, c) {
+    var key = layer + '/' + z + '/' + r + '/' + c, t = gcache[key];
+    if (!t) {
+      t = gcache[key] = { ok: false, img: new Image() };
+      t.img.onload = function () { t.ok = true; scheduleDraw(); };
+      t.img.src = 'https://gibs.earthdata.nasa.gov/wmts/epsg4326/best/' + layer + '/default/500m/' + z + '/' + r + '/' + c + '.jpeg';
+    }
+    return t;
+  }
+  function drawGibs(x0, y0, w, hh, sx_, sy_) {
+    var layer = GIBS[base]; if (!layer) return;
+    var DEG = W / 360, ppd = bgc.width * T.k / 360;           // screen px per degree
+    var z = Math.max(0, Math.min(GMAXZ, Math.ceil(Math.log(ppd * 288 / 512) / Math.LN2 - 0.3)));
+    bctx.save(); bctx.beginPath();
+    bctx.rect((0 - x0) * sx_, (10 - y0) * sy_, W * sx_, 480 * sy_); bctx.clip();
+    for (var zz = Math.max(0, z - 1); zz <= z; zz++) {
+      var tw = 288 / Math.pow(2, zz), cols = Math.ceil(360 / tw), rows = Math.ceil(180 / tw);
+      var lng0 = x0 / DEG - 180, lng1 = (x0 + w) / DEG - 180, lat1 = 90 - (y0 - 10) / DEG, lat0 = 90 - (y0 + hh - 10) / DEG;
+      var c0 = Math.max(0, Math.floor((lng0 + 180) / tw)), c1 = Math.min(cols - 1, Math.floor((lng1 + 180) / tw));
+      var r0 = Math.max(0, Math.floor((90 - lat1) / tw)), r1 = Math.min(rows - 1, Math.floor((90 - lat0) / tw));
+      for (var r = r0; r <= r1; r++) for (var c = c0; c <= c1; c++) {
+        var t = gibsGet(layer, zz, r, c); if (!t.ok) continue;
+        var vx = (c * tw) * DEG, vy = 10 + (r * tw) * DEG, vs = tw * DEG;
+        bctx.drawImage(t.img, (vx - x0) * sx_, (vy - y0) * sy_, vs * sx_ + 0.7, vs * sy_ + 0.7);
+      }
+    }
+    bctx.restore();
   }
 
   // ---- vector detail (Natural Earth 10m), fetched lazily once zoomed in; cells of 10 degrees, delta-encoded 1e-3 degree integers
